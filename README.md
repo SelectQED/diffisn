@@ -1,14 +1,19 @@
 # diffisn
 
-Instead of a line-by-line text diff, diffisn parses SQL into an AST, and compare based on AST.
+Instead of a line-by-line text diff, diffisn parses SQL into an AST, and compares based on AST.
 
 ## Features
 
 - column-by-column `CREATE TABLE` diffs
 - column-by-column `SELECT` diffs
-- other sql clauses (e.g. from clause, where clause, etc) are using a simpler cmoparison TODO: what is it?
+- other sql clauses (e.g. from clause, where clause, etc) are using a simpler comparison TODO: what is it?
 - **Side-by-side terminal output** — colored red/green highlights with dimmed unchanged lines
 - (simple) vim-style keybindings for scrolling and navigating hunks
+
+## Other Note
+
+- i am mainly working on Snowflake db (with a little bit Oracle DB)
+- not sure how it works with other SQL dialects
 
 ## Installation
 
