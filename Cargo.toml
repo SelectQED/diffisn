@@ -1,0 +1,11 @@
+[package]
+name = "diffisn"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sqlparser = "0.43" # The parser to generate the AST
+similar = "2.4"    # A powerful diffing library
+colored = "2.1"    # For green/red terminal output
+crossterm = "0.27"
+libc = "0.2"
