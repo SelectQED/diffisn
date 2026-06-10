@@ -1,6 +1,10 @@
 # diffisn
 
-Instead of a line-by-line text diff, diffisn parses SQL into an AST, and compares based on AST.
+diffisn parses SQL into an AST, and compares based on AST.
+
+## Background
+
+The code is mostly written by AI. But i think it is good to share it anyway.
 
 ## Features
 
