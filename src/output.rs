@@ -3,6 +3,7 @@ use crate::diff::DiffResult;
 use colored::*;
 use similar::{Algorithm, capture_diff_slices, DiffOp};
 use std::env;
+use crossterm::terminal;
 
 pub struct RenderedLine {
     pub left: String,
@@ -470,6 +471,11 @@ fn build_colored_segments(
 // ---------------------------------------------------------------------------
 
 fn get_terminal_width() -> usize {
+    if let Ok((w, _)) = terminal::size() {
+        if w > 0 {
+            return w as usize;
+        }
+    }
     env::var("COLUMNS")
         .ok()
         .and_then(|s| s.parse().ok())
