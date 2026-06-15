@@ -88,7 +88,8 @@ pub fn diff_items(
     old_source: &str,
     new_source: &str,
 ) -> Vec<DiffResult> {
-    let mut results = Vec::new();
+    let mut old_matched: Vec<Option<usize>> = vec![None; old_items.len()];
+    let mut new_matched: Vec<Option<usize>> = vec![None; new_items.len()];
 
     let mut old_by_id: HashMap<String, Vec<usize>> = HashMap::new();
     let mut new_by_id: HashMap<String, Vec<usize>> = HashMap::new();
@@ -104,9 +105,6 @@ pub fn diff_items(
         }
     }
 
-    let mut old_done = vec![false; old_items.len()];
-    let mut new_done = vec![false; new_items.len()];
-
     let all_ids: Vec<String> = old_by_id.keys().cloned().collect();
     for id in &all_ids {
         let old_indices = old_by_id.get(id).cloned().unwrap_or_default();
@@ -114,115 +112,105 @@ pub fn diff_items(
         let max_pairs = old_indices.len().min(new_indices.len());
 
         for k in 0..max_pairs {
-            let old_idx = old_indices[k];
-            let new_idx = new_indices[k];
-            old_done[old_idx] = true;
-            new_done[new_idx] = true;
-
-            results.extend(diff_statement_pair(
-                &old_items[old_idx],
-                &new_items[new_idx],
-                old_source,
-                new_source,
-            ));
-        }
-
-        for &old_idx in &old_indices[max_pairs..] {
-            old_done[old_idx] = true;
-            results.push(DiffResult::Deleted {
-                old_span: old_items[old_idx].span().clone(),
-            });
-        }
-
-        for &new_idx in &new_indices[max_pairs..] {
-            new_done[new_idx] = true;
-            results.push(DiffResult::Inserted {
-                new_span: new_items[new_idx].span().clone(),
-            });
+            old_matched[old_indices[k]] = Some(new_indices[k]);
+            new_matched[new_indices[k]] = Some(old_indices[k]);
         }
     }
 
-    for (id, new_indices) in &new_by_id {
-        if old_by_id.contains_key(id) {
-            continue;
-        }
-        for &new_idx in new_indices {
-            new_done[new_idx] = true;
-            results.push(DiffResult::Inserted {
-                new_span: new_items[new_idx].span().clone(),
-            });
-        }
-    }
-
-    let old_remaining: Vec<usize> = (0..old_items.len()).filter(|i| !old_done[*i]).collect();
-    let new_remaining: Vec<usize> = (0..new_items.len()).filter(|i| !new_done[*i]).collect();
-
-    if old_remaining.is_empty() && new_remaining.is_empty() {
-        return results;
-    }
-
-    let old_sigs: Vec<_> = old_remaining
-        .iter()
-        .map(|&idx| {
-            let item = &old_items[idx];
-            let tokens = tokenize_span(item.span(), old_source);
-            extract_signature(&tokens, item.span(), old_source)
-        })
+    let old_remaining: Vec<usize> = (0..old_items.len())
+        .filter(|i| old_matched[*i].is_none() && item_identity(&old_items[*i]).is_none())
+        .collect();
+    let new_remaining: Vec<usize> = (0..new_items.len())
+        .filter(|i| new_matched[*i].is_none() && item_identity(&new_items[*i]).is_none())
         .collect();
 
-    let new_sigs: Vec<_> = new_remaining
-        .iter()
-        .map(|&idx| {
-            let item = &new_items[idx];
-            let tokens = tokenize_span(item.span(), new_source);
-            extract_signature(&tokens, item.span(), new_source)
-        })
-        .collect();
+    if !old_remaining.is_empty() || !new_remaining.is_empty() {
+        let old_sigs: Vec<_> = old_remaining
+            .iter()
+            .map(|&idx| {
+                let item = &old_items[idx];
+                let tokens = tokenize_span(item.span(), old_source);
+                extract_signature(&tokens, item.span(), old_source)
+            })
+            .collect();
 
-    // Now build all candidate pairs with similarity score >= 0.35
-    let mut candidates = Vec::new();
-    for (i, &old_idx) in old_remaining.iter().enumerate() {
-        for (j, &new_idx) in new_remaining.iter().enumerate() {
-            let score = compute_similarity(&old_sigs[i], &new_sigs[j]);
-            if score >= 0.35 {
-                candidates.push((score, i, j, old_idx, new_idx));
+        let new_sigs: Vec<_> = new_remaining
+            .iter()
+            .map(|&idx| {
+                let item = &new_items[idx];
+                let tokens = tokenize_span(item.span(), new_source);
+                extract_signature(&tokens, item.span(), new_source)
+            })
+            .collect();
+
+        let mut candidates = Vec::new();
+        for (i, &old_idx) in old_remaining.iter().enumerate() {
+            for (j, &new_idx) in new_remaining.iter().enumerate() {
+                let score = compute_similarity(&old_sigs[i], &new_sigs[j]);
+                if score >= 0.35 {
+                    candidates.push((score, i, j, old_idx, new_idx));
+                }
+            }
+        }
+
+        candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut old_paired = vec![false; old_remaining.len()];
+        let mut new_paired = vec![false; new_remaining.len()];
+
+        for (_, i, j, old_idx, new_idx) in candidates {
+            if !old_paired[i] && !new_paired[j] {
+                old_paired[i] = true;
+                new_paired[j] = true;
+
+                old_matched[old_idx] = Some(new_idx);
+                new_matched[new_idx] = Some(old_idx);
             }
         }
     }
 
-    // Sort candidates descending by similarity score
-    candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut results = Vec::new();
+    let mut new_emitted = vec![false; new_items.len()];
+    let mut new_cursor: usize = 0;
 
-    let mut old_paired = vec![false; old_remaining.len()];
-    let mut new_paired = vec![false; new_remaining.len()];
+    for (old_idx, old_item) in old_items.iter().enumerate() {
+        match old_matched[old_idx] {
+            Some(new_idx) => {
+                while new_cursor < new_idx {
+                    if new_matched[new_cursor].is_none() && !new_emitted[new_cursor] {
+                        results.push(DiffResult::Inserted {
+                            new_span: new_items[new_cursor].span().clone(),
+                        });
+                        new_emitted[new_cursor] = true;
+                    }
+                    new_cursor += 1;
+                }
 
-    for (_, i, j, old_idx, new_idx) in candidates {
-        if !old_paired[i] && !new_paired[j] {
-            old_paired[i] = true;
-            new_paired[j] = true;
-            
-            results.extend(diff_statement_pair(
-                &old_items[old_idx],
-                &new_items[new_idx],
-                old_source,
-                new_source,
-            ));
+                new_emitted[new_idx] = true;
+
+                results.extend(diff_statement_pair(
+                    old_item,
+                    &new_items[new_idx],
+                    old_source,
+                    new_source,
+                ));
+
+                if new_cursor <= new_idx {
+                    new_cursor = new_idx + 1;
+                }
+            }
+            None => {
+                results.push(DiffResult::Deleted {
+                    old_span: old_item.span().clone(),
+                });
+            }
         }
     }
 
-    // Any remaining unpaired items are added as Deleted or Inserted
-    for (i, &old_idx) in old_remaining.iter().enumerate() {
-        if !old_paired[i] {
-            results.push(DiffResult::Deleted {
-                old_span: old_items[old_idx].span().clone(),
-            });
-        }
-    }
-
-    for (j, &new_idx) in new_remaining.iter().enumerate() {
-        if !new_paired[j] {
+    for ni in new_cursor..new_items.len() {
+        if new_matched[ni].is_none() && !new_emitted[ni] {
             results.push(DiffResult::Inserted {
-                new_span: new_items[new_idx].span().clone(),
+                new_span: new_items[ni].span().clone(),
             });
         }
     }
