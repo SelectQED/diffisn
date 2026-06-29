@@ -1,6 +1,6 @@
 # diffisn
 
-diffisn parses SQL into an AST, and compares based on AST.
+diffisn parses two SQL files into ASTs, and compares them based on the ASTs.
 
 ## Background
 
@@ -17,11 +17,12 @@ The code is mostly written by AI. But i think it is good to share it anyway.
 ## Other Note
 
 - i am mainly working on Snowflake db (with a little bit Oracle DB)
+- it seems to work with Snowflake SQL dialect
 - not sure how it works with other SQL dialects
 
 ## Installation
 
-Requires Rust 1.95+.
+Requires Rust 1.95 or above
 
 ```bash
 cargo build --release
@@ -31,37 +32,15 @@ The binary will be at `target/release/diffisn`.
 
 ## Usage
 
-### Manual mode
+### standalone
 
 ```bash
 diffisn <old-file> <new-file>
-diffisn -v <old-file> <new-file>    # verbose debug output
-``
-
-### Git mode
-
-Configure `.gitconfig`:
-
 ```
 
-[diff "sqldiff"]
-    command = diffisn
+### git diff
 
-```
-
-Add to `.gitattributes`:
-
-```
-
-*.sql diff=sqldiff
-
-```
-
-Or use directly:
-
-```bash
-GIT_EXTERNAL_DIFF=diffisn git diff
-```
+TODO
 
 ### TUI keybindings
 
