@@ -89,6 +89,16 @@ fn annotate_sql_depth(source: &str, depth: usize) -> Result<Vec<AnnotatedItem>, 
 
         let parsed = parse_all_in_group(&dialect, &tokens_for_parser);
         if parsed.is_empty() {
+            if let Some(stripped) = strip_trailing_slash(tokens_for_parser) {
+                let retry_parsed = parse_all_in_group(&dialect, &stripped);
+                if !retry_parsed.is_empty() {
+                    let new_span = compute_span(&line_starts, &stripped[..stripped.len().saturating_sub(1)]);
+                    for statement in retry_parsed {
+                        results.push(AnnotatedItem::Parsed(Box::new(statement), new_span.clone()));
+                    }
+                    continue;
+                }
+            }
             let end = span.end_byte.min(source.len());
             let raw = source[span.start_byte..end].to_string();
             results.push(AnnotatedItem::Raw(raw, span));
@@ -170,6 +180,20 @@ pub fn tokenize_with_spans(source: &str) -> Vec<TokenSpan> {
             }
         })
         .collect()
+}
+
+fn strip_trailing_slash(tokens: Vec<TokenWithLocation>) -> Option<Vec<TokenWithLocation>> {
+    let last_real = tokens.iter().rposition(|t| {
+        !matches!(t.token, Token::Whitespace(_) | Token::EOF)
+    })?;
+
+    if !matches!(tokens[last_real].token, Token::Div) {
+        return None;
+    }
+
+    let mut result = tokens;
+    result.remove(last_real);
+    Some(result)
 }
 
 fn parse_all_in_group(
