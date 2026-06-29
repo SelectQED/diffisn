@@ -547,7 +547,7 @@ fn diff_hybrid_query(
     
     let mut diffs = Vec::new();
     
-    if let Some(d) = compare_chunks(old_chunks.select, new_chunks.select) { diffs.push(d); }
+    diffs.extend(compare_field_chunks(&old_chunks.select, &new_chunks.select));
     if let Some(d) = compare_chunks(old_chunks.from, new_chunks.from) { diffs.push(d); }
     
     let mut old_joins_map: HashMap<String, TokenChunk> = old_chunks.joins.into_iter().collect();
@@ -573,8 +573,12 @@ struct TokenChunk<'a> {
     tokens: &'a [TokenSpan],
 }
 
+struct ChunkList<'a> {
+    chunks: Vec<TokenChunk<'a>>,
+}
+
 struct QueryChunks<'a> {
-    select: Option<TokenChunk<'a>>,
+    select: ChunkList<'a>,
     from: Option<TokenChunk<'a>>,
     joins: Vec<(String, TokenChunk<'a>)>,
     other: Option<TokenChunk<'a>>,
@@ -626,6 +630,29 @@ fn make_chunk<'a>(tokens: &'a [TokenSpan]) -> Option<TokenChunk<'a>> {
     }
 }
 
+fn split_by_depth0_commas<'a>(tokens: &'a [TokenSpan]) -> Vec<&'a [TokenSpan]> {
+    let mut fields = Vec::new();
+    let mut start = 0;
+    let mut depth: i32 = 0;
+    for (i, t) in tokens.iter().enumerate() {
+        if t.value == "(" { depth += 1; }
+        if t.value == ")" { depth = depth.saturating_sub(1); }
+        if depth == 0 && t.value == "," {
+            fields.push(&tokens[start..i]);
+            start = i + 1;
+        }
+    }
+    if start < tokens.len() {
+        fields.push(&tokens[start..]);
+    }
+    fields
+}
+
+fn make_chunk_list<'a>(fields: &[&'a [TokenSpan]]) -> ChunkList<'a> {
+    let chunks: Vec<TokenChunk<'a>> = fields.iter().filter_map(|f| make_chunk(f)).collect();
+    ChunkList { chunks }
+}
+
 fn chunk_tokens<'a>(tokens: &'a [TokenSpan], from_table: &sqlparser::ast::TableWithJoins) -> QueryChunks<'a> {
     let from_idx = find_outer_keyword(tokens, "FROM").unwrap_or(tokens.len());
     
@@ -637,6 +664,8 @@ fn chunk_tokens<'a>(tokens: &'a [TokenSpan], from_table: &sqlparser::ast::TableW
         .unwrap_or(tokens.len());
         
     let select_tokens = &tokens[..from_idx];
+    let select_fields = split_by_depth0_commas(select_tokens);
+    let select_chunks = make_chunk_list(&select_fields);
     
     let mut join_indices = Vec::new();
     let mut depth: i32 = 0;
@@ -677,11 +706,110 @@ fn chunk_tokens<'a>(tokens: &'a [TokenSpan], from_table: &sqlparser::ast::TableW
     let other_tokens = &tokens[where_idx..];
     
     QueryChunks {
-        select: make_chunk(select_tokens),
+        select: select_chunks,
         from: make_chunk(from_tokens),
         joins,
         other: make_chunk(other_tokens),
     }
+}
+
+fn compare_field_chunks(
+    old_list: &ChunkList,
+    new_list: &ChunkList,
+) -> Vec<DiffResult> {
+    let old_keys: Vec<String> = old_list.chunks.iter().map(|c| {
+        c.tokens.iter().map(|t| t.value.as_str()).collect::<Vec<_>>().join("")
+    }).collect();
+    let new_keys: Vec<String> = new_list.chunks.iter().map(|c| {
+        c.tokens.iter().map(|t| t.value.as_str()).collect::<Vec<_>>().join("")
+    }).collect();
+
+    let ops = capture_diff_slices(Algorithm::Patience, &old_keys, &new_keys);
+    let mut diffs = Vec::new();
+
+    for op in &ops {
+        match op {
+            DiffOp::Equal { old_index, new_index, len } => {
+                for i in 0..*len {
+                    let o = &old_list.chunks[old_index + i];
+                    let n = &new_list.chunks[new_index + i];
+                    diffs.push(DiffResult::Unchanged {
+                        old_span: o.span.clone(),
+                        new_span: n.span.clone(),
+                    });
+                }
+            }
+            DiffOp::Delete { old_index, old_len, .. } => {
+                for i in 0..*old_len {
+                    let o = &old_list.chunks[old_index + i];
+                    diffs.push(DiffResult::Deleted {
+                        old_span: o.span.clone(),
+                    });
+                }
+            }
+            DiffOp::Insert { new_index, new_len, .. } => {
+                for i in 0..*new_len {
+                    let n = &new_list.chunks[new_index + i];
+                    diffs.push(DiffResult::Inserted {
+                        new_span: n.span.clone(),
+                    });
+                }
+            }
+            DiffOp::Replace { old_index, old_len, new_index, new_len } => {
+                let max_len = (*old_len).max(*new_len);
+                for i in 0..max_len {
+                    let o = if i < *old_len { Some(&old_list.chunks[old_index + i]) } else { None };
+                    let n = if i < *new_len { Some(&new_list.chunks[new_index + i]) } else { None };
+                    match (o, n) {
+                        (Some(oc), Some(nc)) => {
+                            let old_vals: Vec<&str> = oc.tokens.iter().map(|t| t.value.as_str()).collect();
+                            let new_vals: Vec<&str> = nc.tokens.iter().map(|t| t.value.as_str()).collect();
+                            if old_vals == new_vals {
+                                diffs.push(DiffResult::Unchanged {
+                                    old_span: oc.span.clone(),
+                                    new_span: nc.span.clone(),
+                                });
+                            } else {
+                                let mut o_ch = Vec::new();
+                                let mut n_ch = Vec::new();
+                                let token_ops = capture_diff_slices(Algorithm::Patience, &old_vals, &new_vals);
+                                for top in token_ops {
+                                    match top {
+                                        DiffOp::Delete { old_index: oi, old_len: ol, .. } => {
+                                            for j in 0..ol { o_ch.push((oc.tokens[oi + j].start_byte, oc.tokens[oi + j].end_byte)); }
+                                        }
+                                        DiffOp::Insert { new_index: ni, new_len: nl, .. } => {
+                                            for j in 0..nl { n_ch.push((nc.tokens[ni + j].start_byte, nc.tokens[ni + j].end_byte)); }
+                                        }
+                                        DiffOp::Replace { old_index: oi, old_len: ol, new_index: ni, new_len: nl } => {
+                                            for j in 0..ol { o_ch.push((oc.tokens[oi + j].start_byte, oc.tokens[oi + j].end_byte)); }
+                                            for j in 0..nl { n_ch.push((nc.tokens[ni + j].start_byte, nc.tokens[ni + j].end_byte)); }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                diffs.push(DiffResult::Modified {
+                                    old_span: oc.span.clone(),
+                                    new_span: nc.span.clone(),
+                                    old_changed: o_ch,
+                                    new_changed: n_ch,
+                                });
+                            }
+                        }
+                        (Some(oc), None) => {
+                            diffs.push(DiffResult::Deleted { old_span: oc.span.clone() });
+                        }
+                        (None, Some(nc)) => {
+                            diffs.push(DiffResult::Inserted { new_span: nc.span.clone() });
+                        }
+                        (None, None) => {}
+                    }
+                }
+            }
+        }
+    }
+
+    diffs
 }
 
 fn compare_chunks(
