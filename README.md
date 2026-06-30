@@ -40,7 +40,9 @@ diffisn <old-file> <new-file>
 
 ### git diff
 
-TODO
+put scripts/git-diffisn shell script file in path
+
+and then you can use `git diffisn` command
 
 ### TUI keybindings
 
