@@ -4,7 +4,7 @@ diffisn parses two SQL files into ASTs, and compares them based on the ASTs.
 
 ## why another diff?
 
-Most standard diff tools rely on line-by-line text comparison, which fails spectacularly for SQL. A simple change in keyword casing, or a reordered column list can trigger dozens of false positives in a standard Git diff, masking the actual logic changes.
+Most standard diff tools do not work very well with SQL. A simple change in keyword casing, or a reordered column list, or some reformatting can trigger dozens of false positives in a standard Git diff, masking the actual logic changes.
 
 The name "diffisn" comes from a modified quote of the Interstellar movie:
 
