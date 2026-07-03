@@ -15,7 +15,7 @@ When your SQLs are spinning, *diff is* *n*ecessary
 
 ## Background
 
-I develop it with AI. i write specification and test. AI does most of the coding. Not 100% "hand made", but i think it is good to share it.
+I develop it with AI. i write specification and test. AI does most of the coding. So diffisn is not 100% "hand made", but i think it is good to share it.
 
 Some other note:
 
