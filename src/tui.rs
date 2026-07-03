@@ -8,23 +8,27 @@ use crossterm::{
 use colored::*;
 use std::io::{self, IsTerminal, Write};
 use std::fs::File;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
 pub fn run_pager(lines: &[crate::output::RenderedLine], diff_indices: &[usize]) -> io::Result<()> {
-    // Reattach stdin to the TTY if Git hijacked it
-    if !io::stdin().is_terminal() {
-        if let Ok(tty) = File::open("/dev/tty") {
-            unsafe {
-                libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO);
+    #[cfg(unix)]
+    {
+        // Reattach stdin to the TTY if Git hijacked it
+        if !io::stdin().is_terminal() {
+            if let Ok(tty) = File::open("/dev/tty") {
+                unsafe {
+                    libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO);
+                }
             }
         }
-    }
 
-    // Reattach stdout to the TTY if Git hijacked it
-    if !io::stdout().is_terminal() {
-        if let Ok(tty) = File::options().write(true).open("/dev/tty") {
-            unsafe {
-                libc::dup2(tty.as_raw_fd(), libc::STDOUT_FILENO);
+        // Reattach stdout to the TTY if Git hijacked it
+        if !io::stdout().is_terminal() {
+            if let Ok(tty) = File::options().write(true).open("/dev/tty") {
+                unsafe {
+                    libc::dup2(tty.as_raw_fd(), libc::STDOUT_FILENO);
+                }
             }
         }
     }
@@ -106,6 +110,7 @@ pub fn run_pager(lines: &[crate::output::RenderedLine], diff_indices: &[usize]) 
                     // Forcefully abort the ENTIRE `git diff` process loop!
                     let _ = terminal::disable_raw_mode();
                     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show, EnableLineWrap);
+                    #[cfg(unix)]
                     unsafe { libc::kill(0, libc::SIGINT); }
                     std::process::exit(130);
                 }
