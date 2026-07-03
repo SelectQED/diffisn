@@ -2,23 +2,34 @@
 
 diffisn parses two SQL files into ASTs, and compares them based on the ASTs.
 
+## why another diff?
+
+Most standard diff tools rely on line-by-line text comparison, which fails spectacularly for SQL. A simple change in keyword casing, or a reordered column list can trigger dozens of false positives in a standard Git diff, masking the actual logic changes.
+
+The name "diffisn" comes from a modified quote of the Interstellar movie:
+
+> There is no point using energy to make another diff...
+> No. It is necessary.
+
+When your SQLs are spinning, *diff is* *n*ecessary
+
 ## Background
 
-The code is mostly written by AI. But i think it is good to share it anyway.
+I develop it with AI. i write specification and test. AI does most of the coding. Not 100% "hand made", but i think it is good to share it.
+
+Some other note:
+
+- i am mainly working on Snowflake db (with a little bit Oracle DB)
+- i use diffisn in work on a daily basis. It performs well for my purpose
+- it shall work for most other dialects, but prepare for gotcha
 
 ## Features
 
-- column-by-column `CREATE TABLE` diffs
-- column-by-column `SELECT` diffs
+- AST based column-by-column `CREATE TABLE` diffs
+- AST based column-by-column `SELECT` diffs
 - other SQL clauses (e.g. FROM, WHERE, etc.) use a token-level diff via the Patience algorithm
 - **Side-by-side terminal output** — colored red/green highlights with dimmed unchanged lines
 - (simple) vim-style keybindings for scrolling and navigating hunks
-
-## Other Note
-
-- i am mainly working on Snowflake db (with a little bit Oracle DB)
-- it seems to work with Snowflake SQL dialect
-- not sure how it works with other SQL dialects
 
 ## Installation
 
@@ -40,9 +51,9 @@ diffisn <old-file> <new-file>
 
 ### git diff
 
-put scripts/git-diffisn shell script file in path
+put `scripts/git-diffisn` shell script file in path
 
-and then you can use `git diffisn` command
+and then you can use `git diffisn` command just like the normal `git diff` command.
 
 ### TUI keybindings
 
