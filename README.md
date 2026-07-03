@@ -28,7 +28,7 @@ Some other note:
 - AST based column-by-column `CREATE TABLE` diffs
 - AST based column-by-column `SELECT` diffs
 - other SQL clauses (e.g. FROM, WHERE, etc.) use a token-level diff via the Patience algorithm
-- **Side-by-side terminal output** — colored red/green highlights with dimmed unchanged lines
+- Side-by-side terminal output — colored red/green highlights with dimmed unchanged lines
 - (simple) vim-style keybindings for scrolling and navigating hunks
 
 ## Installation
