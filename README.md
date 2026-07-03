@@ -51,9 +51,14 @@ diffisn <old-file> <new-file>
 
 ### git diff
 
-put `scripts/git-diffisn` shell script file in path
+Put the platform-appropriate script from `scripts/` in your `PATH`:
 
-and then you can use `git diffisn` command just like the normal `git diff` command.
+| Shell | Script | Command |
+|---|---|---|
+| **bash / zsh** (Linux, macOS, Git Bash) | `scripts/git-diffisn` | `git diffisn` |
+| **PowerShell** (Windows, VS Code) | `scripts/git-diffisn.ps1` | `git diffisn` |
+
+Then use `git diffisn` just like the normal `git diff` command.
 
 ### TUI keybindings
 
